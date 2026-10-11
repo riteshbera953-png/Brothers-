@@ -8,11 +8,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.text({ type: "text/plain" }));
 
-// Telegram Configuration
+// Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = "-1004480783091";
 
-// Send Telegram Message
+// Send Telegram message
 async function sendTelegramMessage(message) {
   if (!TELEGRAM_BOT_TOKEN) {
     throw new Error("TELEGRAM_BOT_TOKEN is missing");
@@ -36,27 +36,23 @@ async function sendTelegramMessage(message) {
   const result = await response.json();
 
   if (!response.ok || !result.ok) {
-    throw new Error(
-      result.description || "Telegram delivery failed"
-    );
+    throw new Error(result.description || "Telegram delivery failed");
   }
 
   return result;
 }
 
-// Home Route
+// Home
 app.get("/", (req, res) => {
   res.send("Brothers Panel Backend is online.");
 });
 
-// Health Check
+// Health check
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy"
-  });
+  res.status(200).json({ status: "healthy" });
 });
 
-// Firebase Notification
+// Firebase notification
 async function firebaseNotification(req, res) {
   try {
     let data = req.body;
@@ -79,7 +75,6 @@ async function firebaseNotification(req, res) {
       });
     }
 
-    // Require genuine user consent
     if (data.consent !== true) {
       return res.status(403).json({
         success: false,
@@ -89,15 +84,35 @@ async function firebaseNotification(req, res) {
 
     const firebaseUrl = data.firebaseUrl;
 
-    if (
-      typeof firebaseUrl !== "string" ||
-      !/^https:\/\/[a-zA-Z0-9-]+\.firebaseio\.com\/?$/.test(
-        firebaseUrl
-      )
-    ) {
+    if (typeof firebaseUrl !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Firebase URL is required"
+      });
+    }
+
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(firebaseUrl);
+    } catch {
       return res.status(400).json({
         success: false,
         error: "Invalid Firebase URL"
+      });
+    }
+
+    const validHost =
+      parsedUrl.protocol === "https:" &&
+      (
+        parsedUrl.hostname.endsWith(".firebaseio.com") ||
+        parsedUrl.hostname.endsWith(".firebasedatabase.app")
+      );
+
+    if (!validHost) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported Firebase URL"
       });
     }
 
@@ -107,15 +122,15 @@ async function firebaseNotification(req, res) {
       timeStyle: "medium"
     });
 
-    const safeUrl = firebaseUrl
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    const escapeHTML = (value) =>
+      value.replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 
     const message = [
       "🔥 <b>Firebase Connected</b>",
       "",
-      `🔗 <b>Firebase URL:</b> <code>${safeUrl}</code>`,
+      `🔗 <b>Firebase URL:</b> <code>${escapeHTML(firebaseUrl)}</code>`,
       `🕒 <b>Date &amp; Time (IST):</b> ${dateTime}`
     ].join("\n");
 
@@ -126,7 +141,7 @@ async function firebaseNotification(req, res) {
       message: "Telegram notification sent"
     });
   } catch (error) {
-    console.error("Telegram forwarding error:", error.message);
+    console.error("Notification error:", error.message);
 
     return res.status(502).json({
       success: false,
@@ -135,11 +150,11 @@ async function firebaseNotification(req, res) {
   }
 }
 
-// API Routes
+// Support both endpoint paths
 app.post("/api/firebase-connected", firebaseNotification);
 app.post("/api/telegram/firebase-connected", firebaseNotification);
 
-// Start Server
+// Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
