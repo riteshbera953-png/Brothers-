@@ -8,27 +8,59 @@ app.use(cors());
 app.use(express.json());
 app.use(express.text({ type: "text/plain" }));
 
+// Telegram Configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TELEGRAM_CHAT_ID = "-1004480783091";
 
-// Health check
+// Send Telegram Message
+async function sendTelegramMessage(message) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    throw new Error("TELEGRAM_BOT_TOKEN is missing");
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: "HTML"
+      })
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.ok) {
+    throw new Error(
+      result.description || "Telegram delivery failed"
+    );
+  }
+
+  return result;
+}
+
+// Home Route
 app.get("/", (req, res) => {
   res.send("Brothers Panel Backend is online.");
 });
 
+// Health Check
 app.get("/health", (req, res) => {
   res.status(200).json({
-    status: "healthy",
-    time: new Date().toISOString()
+    status: "healthy"
   });
 });
 
-// Firebase connection notification
-app.post("/api/firebase-connected", async (req, res) => {
+// Firebase Notification
+async function firebaseNotification(req, res) {
   try {
     let data = req.body;
 
-    // Support JSON sent with text/plain content type
     if (typeof data === "string") {
       try {
         data = JSON.parse(data);
@@ -47,6 +79,7 @@ app.post("/api/firebase-connected", async (req, res) => {
       });
     }
 
+    // Require genuine user consent
     if (data.consent !== true) {
       return res.status(403).json({
         success: false,
@@ -58,7 +91,9 @@ app.post("/api/firebase-connected", async (req, res) => {
 
     if (
       typeof firebaseUrl !== "string" ||
-      !/^https:\/\/[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.firebaseio\.com\/?$/.test(firebaseUrl)
+      !/^https:\/\/[a-zA-Z0-9-]+\.firebaseio\.com\/?$/.test(
+        firebaseUrl
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -66,68 +101,45 @@ app.post("/api/firebase-connected", async (req, res) => {
       });
     }
 
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-      return res.status(500).json({
-        success: false,
-        error: "Telegram configuration is missing"
-      });
-    }
-
-    const timestamp = new Date().toLocaleString("en-IN", {
+    const dateTime = new Date().toLocaleString("en-IN", {
       timeZone: "Asia/Kolkata",
       dateStyle: "medium",
       timeStyle: "medium"
     });
 
+    const safeUrl = firebaseUrl
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
     const message = [
       "🔥 <b>Firebase Connected</b>",
       "",
-      `🔗 <b>Firebase URL:</b> <code>${firebaseUrl}</code>`,
-      `🕒 <b>Date &amp; Time (IST):</b> ${timestamp}`,
-      "",
-      "✅ User consent received."
+      `🔗 <b>Firebase URL:</b> <code>${safeUrl}</code>`,
+      `🕒 <b>Date &amp; Time (IST):</b> ${dateTime}`
     ].join("\n");
 
-    const telegramResponse = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: message,
-          parse_mode: "HTML"
-        })
-      }
-    );
-
-    const result = await telegramResponse.json();
-
-    if (!telegramResponse.ok || !result.ok) {
-      console.error("Telegram delivery failed:", result.description);
-
-      return res.status(502).json({
-        success: false,
-        error: "Telegram message delivery failed"
-      });
-    }
+    await sendTelegramMessage(message);
 
     return res.status(200).json({
       success: true,
-      message: "Firebase notification sent"
+      message: "Telegram notification sent"
     });
   } catch (error) {
-    console.error("Backend error:", error.message);
+    console.error("Telegram forwarding error:", error.message);
 
-    return res.status(500).json({
+    return res.status(502).json({
       success: false,
-      error: "Internal server error"
+      error: "Telegram delivery failed"
     });
   }
-});
+}
 
+// API Routes
+app.post("/api/firebase-connected", firebaseNotification);
+app.post("/api/telegram/firebase-connected", firebaseNotification);
+
+// Start Server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
